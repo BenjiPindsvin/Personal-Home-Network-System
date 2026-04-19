@@ -3,29 +3,55 @@ import threading
 import queue
 import json
 import time
+import tomllib
+
+socket_timeout = 5.0
+ping_interval = 30
 
 class DataSender:
     devices = {}
 
-    def __init__(self, host="0.0.0.0", port=8080):
+    def __init__(self):
+        try:
+            with open("config.toml", "rb") as f: #Open the config file
+                config = tomllib.load(f) #Load the config file to tomllib
+        except FileNotFoundError: #The file was not found
+            print("Config.toml could not be found") #Print so the user knows the error
+            return 0 #Return 0 to indicate the error
+        except tomllib.TOMLDecodeError: #The file has an invalid format
+            print(f"Config.toml is invalid") #Print so the user knows the error
+            return 0 #Return 0 to indicate the error
+        
+        network = config.get("network", {}) #Get the network section
+        host = network.get("host", "0.0.0.0") #Get the host
+        port_socket = network.get("port", 8080) #Get the port
+
+        settings = config.get("timeout", {}) #Get the timeout section
+        socket_timeout = settings.get("socket-timeout", 5.0) #Get the socket timeout
+        ping_interval = settings.get("ping-interval", 30) #Get the interval of the pings
+
+        settings = config.get("devices", {}) #Get the devices section
+        max_devices = settings.get("max-devices", 5) #Get the max devices
+
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) #Make the socket
 
         #Connect to the port
         print("Connecting to port")
         while True:
             try:
-                self.server_socket.bind((host, port)) #Try to bind to port
+                self.server_socket.bind((host, port_socket)) #Try to bind to port. You can configure the port and host in config.toml
                 break #Break out of the loop in case the bind works
             except OSError:
                 print(".", end=" ", flush=True) #Print . to make it look like a loading screen
                 time.sleep(2) #Sleep so it doesn't spam bind and crash the program
 
-        self.server_socket.listen(5) #Start listening on the server for devices. There can be a maximum of 5 devices connected
+        self.server_socket.listen(max_devices) #Start listening on the server for devices. You can configure the max devices in config.toml
         self.lock = threading.Lock() #Does some stuff to make the threads safer
         print("Connected to port")
-        print(f"Server listening on {host}:{port}")
+        print(f"Server listening on {host}:{port_socket}")
         t = threading.Thread(target=self.MainLoop, name="DataSender: MainLoop") #Create a new thread to handle devices connecting and give them each their own thread
         t.start() #Start the thread
+        return 1 #Tell main.py that initialization was successful
 
     def MainLoop(self):
         while True:
@@ -84,7 +110,7 @@ class ClientHandler:
     def __init__(self, client_socket: socket.SocketType, address, q1: queue.Queue, q2: queue.Queue, data_sender):
         #Save all the data for future use
         self.socket = client_socket
-        self.socket.settimeout(5.0)
+        self.socket.settimeout(socket_timeout)
         self.address = address
         self.queue1 = q1
         self.queue2 = q2
@@ -200,7 +226,7 @@ class ClientHandler:
             
     def Ping(self):
         while True:
-            time.sleep(30) #Wait 30 seconds so it doesn't flood the device with pings
+            time.sleep(ping_interval) #Wait the configured interval so it doesn't flood the device with pings
             try:
                 request = json.dumps({"function": "ping", "data": {}}).encode() #Create the request and encode it
                 self.socket.send(request + b'\n') #Send the request and the \n to show where the message ends
@@ -210,7 +236,7 @@ class ClientHandler:
                 if response is None: #If the device did not respond
                     print("Device disconnected - no ping response") #Print it for debug/monitoring reasons
                     self.queue1.put({"function": "closeSocket"}) #Send the close socket command
-                    break #Break out of the loop that sends a ping every 30 seconds
+                    break #Break out of the loop that sends a ping every interval
 
                 elif response.get("status") != "pong": #If the response is something else. It is still connected, but it's still good to note
                     print(f"Unexpected ping response: {response}") #Print it for debug/monitoring reasons
@@ -218,9 +244,9 @@ class ClientHandler:
             except socket.timeout: #If the receive timed out because the device is not responding
                 print("Device disconnected - ping timeout") #Print it for debug/monitoring reasons
                 self.queue1.put({"function": "closeSocket"}) #Send the close socket command
-                break #Break out of the loop that sends a ping every 30 seconds
+                break #Break out of the loop that sends a ping every interval
 
             except Exception as e:
                 print(f"Device disconnected during ping: {e}") #Print the error for debug/monitoring reasons
                 self.queue1.put({"function": "closeSocket"}) #Send the close socket command
-                break #Break out of the loop that sends a ping every 30 seconds
+                break #Break out of the loop that sends a ping every interval
