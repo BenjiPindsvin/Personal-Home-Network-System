@@ -1,6 +1,10 @@
-# IoT Device Manager
+# Personal Home Network System
 
-A Python-based server for managing and controlling IoT devices over your network with a REST API interface.
+A system for having your own network for your devices, that make you able to control it. This service uses TCP sockets to connect to your devices, and you can control it as it was an website API.
+
+## Info
+
+This is a python program I made for my server, that I have decided to make public. This may not be the most efficient system, but it works fine for me.
 
 ## Requirements
 
@@ -65,7 +69,7 @@ Body: {
 
 ## Device Protocol
 
-Devices connect via TCP on port 8080 and communicate using JSON messages delimited by `\n`.
+Devices connect via TCP on port 8080 (Can be changed in the config file) and communicate using JSON messages delimited by `\n`.
 
 ### Connection Flow
 
@@ -91,11 +95,3 @@ Device to server (response):
 ## Example Python Client
 
 See the example device code at examples/example_device.py.
-
-## License
-
-MIT License
-
-## Contributing
-
-Pull requests are welcome! For major changes, please open an issue first.
